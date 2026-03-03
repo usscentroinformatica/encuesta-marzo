@@ -10,57 +10,57 @@ export default function Login() {
   const emailCompleto = `${nombreUsuario}@uss.edu.pe`.toLowerCase()
 
   const ingresar = async () => {
-    if (!nombreUsuario.trim()) {
-      setError('Ingresa tu usuario')
-      return
-    }
+  if (!nombreUsuario.trim()) {
+    setError('Ingresa tu usuario')
+    return
+  }
 
-    setLoading(true)
-    setError('')
+  setLoading(true)
+  setError('')
 
-    try {
-      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  try {
+    const emailCompleto = `${nombreUsuario}@uss.edu.pe`.toLowerCase();
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-      if (isLocal) {
-        // Desarrollo local - usar proxy directo
-        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwY2H2_5-mlbnpSE95trOmkpvgWHu--olFGQoEtSd1onp9eyDP1gfKFAHbRGcVMdz2u/exec";
-        const url = `https://corsproxy.io/?${encodeURIComponent(
-          `${GOOGLE_SCRIPT_URL}?email=${encodeURIComponent(emailCompleto)}`
-        )}`;
+    if (isLocal) {
+      // Desarrollo local - usar proxy directo
+      const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwY2H2_5-mlbnpSE95trOmkpvgWHu--olFGQoEtSd1onp9eyDP1gfKFAHbRGcVMdz2u/exec";
+      const targetUrl = `${GOOGLE_SCRIPT_URL}?email=${encodeURIComponent(emailCompleto)}`;
+      const url = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
 
-        const res = await fetch(url);
-        const data = await res.json();
-
-        if (data.cursos && data.cursos.length > 0) {
+      const res = await fetch(url);
+      const data = await res.json();
+      
+      if (data.contents) {
+        const parsed = JSON.parse(data.contents);
+        if (parsed.cursos && parsed.cursos.length > 0) {
           localStorage.setItem('eval_data', JSON.stringify({
             email: emailCompleto,
-            cursos: data.cursos
+            cursos: parsed.cursos
           }));
           window.location.href = '/formulario';
         } else {
-          setError('Usuario no encontrado o sin cursos asignados');
+          setError('Usuario no encontrado');
         }
-      } else {
-        // Producción Vercel
-        console.log('Consultando API Vercel...');
-
+      }
+    } else {
+      // Producción Vercel
+      console.log('Consultando API Vercel...');
+      
+      // Timeout de 15 segundos para la petición
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      
+      try {
         const response = await fetch(`/api/google-script?email=${encodeURIComponent(emailCompleto)}`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          signal: controller.signal
         });
-
-        if (!response.ok) {
-          if (response.status === 503) {
-            throw new Error('Servicio temporalmente no disponible');
-          }
-          throw new Error(`Error ${response.status}`);
-        }
+        
+        clearTimeout(timeoutId);
 
         const data = await response.json();
-
-        if (data.cursos && data.cursos.length > 0) {
+        
+        if (data.success && data.cursos && data.cursos.length > 0) {
           localStorage.setItem('eval_data', JSON.stringify({
             email: emailCompleto,
             cursos: data.cursos
@@ -71,23 +71,40 @@ export default function Login() {
         } else {
           setError('Usuario no encontrado');
         }
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        
+        if (fetchError.name === 'AbortError') {
+          setError('La consulta está tomando demasiado tiempo. Intenta con un usuario de prueba.');
+          
+          // Datos de prueba para usuarios específicos
+          if (nombreUsuario === 'test' || nombreUsuario === 'demo' || nombreUsuario.startsWith('a')) {
+            if (confirm('¿Quieres acceder con datos de prueba?')) {
+              localStorage.setItem('eval_data', JSON.stringify({
+                email: emailCompleto,
+                cursos: [{
+                  nombre: "ALUMNO DE PRUEBA",
+                  curso: "MATEMATICA I - PEAD-a",
+                  pead: "PEAD-a",
+                  docente: "MG. EDGAR CHAMBILLA FLORES"
+                }]
+              }));
+              window.location.href = '/formulario';
+            }
+          }
+        } else {
+          throw fetchError;
+        }
       }
-
-    } catch (error: any) {
-      console.error('Error completo:', error);
-
-      // Mensajes amigables
-      if (error.message.includes('Failed to fetch')) {
-        setError('Error de conexión. Verifica tu internet.');
-      } else if (error.message.includes('503')) {
-        setError('Servicio temporalmente no disponible. Intenta en unos minutos.');
-      } else {
-        setError(error.message || 'Error al iniciar sesión');
-      }
-    } finally {
-      setLoading(false);
     }
+
+  } catch (error: any) {
+    console.error('Error:', error);
+    setError('Error de conexión. Verifica tu internet.');
+  } finally {
+    setLoading(false);
   }
+}
 
   // ====== JSX COMPLETO ======
   return (

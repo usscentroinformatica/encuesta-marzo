@@ -2,7 +2,6 @@ export default async function handler(req, res) {
   console.log('=== INICIO API VERCEL ===');
   console.log('Method:', req.method);
   console.log('Query:', req.query);
-  console.log('Body:', req.body);
 
   // Configurar CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -23,113 +22,66 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Email requerido' });
       }
 
+      // ✅ Construir URL para Google Script
       const targetUrl = `${GOOGLE_SCRIPT_URL}?email=${encodeURIComponent(email)}`;
       
-      // 📋 LISTA AMPLIADA DE PROXIES
-      const proxies = [
-        {
-          name: 'corsproxy.io',
-          url: `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,
-          type: 'text'
-        },
-        {
-          name: 'api.allorigins.win',
-          url: `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
-          type: 'json',
-          parse: (data) => data.contents ? JSON.parse(data.contents) : null
-        },
-        {
-          name: 'cors-anywhere.herokuapp.com',
-          url: `https://cors-anywhere.herokuapp.com/${targetUrl}`,
-          type: 'text'
-        },
-        {
-          name: 'thingproxy.freeboard.io',
-          url: `https://thingproxy.freeboard.io/fetch/${targetUrl}`,
-          type: 'text'
-        },
-        {
-          name: 'cors.bridged.cc',
-          url: `https://cors.bridged.cc/${targetUrl}`,
-          type: 'text'
-        }
-      ];
-
-      for (const proxy of proxies) {
-        try {
-          console.log(`Intentando con ${proxy.name}...`);
-          
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 6000); // 6 segundos por proxy
-
-          const response = await fetch(proxy.url, {
-            signal: controller.signal,
-            headers: {
-              'Accept': 'application/json',
-              'User-Agent': 'Vercel/1.0',
-              'Origin': 'https://encuesta-marzo.vercel.app'
-            }
-          });
-
-          clearTimeout(timeoutId);
-
-          if (response.ok) {
-            let data;
-            
-            if (proxy.type === 'json' && proxy.parse) {
-              const jsonData = await response.json();
-              data = proxy.parse(jsonData);
-            } else {
-              const text = await response.text();
-              console.log(`${proxy.name} respondió:`, text.substring(0, 100));
-              
-              // Intentar extraer JSON del texto
-              const jsonMatch = text.match(/\{.*\}/s);
-              if (jsonMatch) {
-                try {
-                  data = JSON.parse(jsonMatch[0]);
-                } catch (e) {
-                  console.log(`No se pudo parsear JSON de ${proxy.name}`);
-                }
-              }
-            }
-
-            if (data && data.cursos && data.cursos.length > 0) {
-              console.log(`✅ ${proxy.name} exitoso`);
-              return res.status(200).json({
-                success: true,
-                cursos: data.cursos
-              });
-            }
-          } else {
-            console.log(`${proxy.name} respondió con status: ${response.status}`);
-          }
-        } catch (error) {
-          console.log(`${proxy.name} falló:`, error.message);
-        }
-      }
-
-      // 🚨 ÚLTIMO RECURSO: Datos quemados para pruebas
-      console.log('⚠️ Usando datos de prueba quemados');
+      // ✅ Usar allorigins (funciona perfectamente)
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
       
-      // Verificar si es un email de prueba conocido
-      if (email.includes('test') || email.includes('demo') || email.startsWith('mmujica')) {
-        return res.status(200).json({
-          success: true,
-          cursos: [
-            {
-              nombre: "MIGUEL ANGEL MUJICA",
-              curso: "MATEMATICA I - PEAD-a",
-              pead: "PEAD-a",
-              docente: "MG. EDGAR CHAMBILLA FLORES"
-            }
-          ]
+      console.log('Proxy URL:', proxyUrl);
+
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        const response = await fetch(proxyUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Vercel/1.0'
+          },
+          signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log('Respuesta allorigins:', data);
+          
+          // allorigins devuelve { contents: "..." }
+          if (data.contents) {
+            try {
+              const parsedData = JSON.parse(data.contents);
+              console.log('Datos parseados:', parsedData);
+              
+              // ✅ Verificar la estructura de tu respuesta
+              if (parsedData.success && parsedData.cursos && parsedData.cursos.length > 0) {
+                console.log('✅ Datos obtenidos correctamente');
+                return res.status(200).json({
+                  success: true,
+                  cursos: parsedData.cursos
+                });
+              } else {
+                console.log('Usuario sin cursos');
+                return res.status(404).json({
+                  success: false,
+                  error: 'Usuario sin cursos asignados'
+                });
+              }
+            } catch (parseError) {
+              console.error('Error parseando JSON:', parseError);
+            }
+          }
+        }
+      } catch (fetchError) {
+        console.error('Error en fetch:', fetchError);
       }
 
-      return res.status(504).json({ 
+      // Si falla, devolver error
+      return res.status(503).json({ 
         success: false,
-        error: 'No se pudo conectar con el servicio. Intenta nuevamente.' 
+        error: 'Error al conectar con el servicio'
       });
     }
 
@@ -137,65 +89,50 @@ export default async function handler(req, res) {
       const body = req.body;
       console.log('Procesando POST:', body);
 
-      // Construir los datos para enviar
+      // Construir datos para enviar
       const formData = new URLSearchParams();
-      formData.append('action', 'submit');
+      formData.append('action', body.action || 'submit');
       formData.append('email', body.email || '');
       formData.append('nombre', body.nombre || '');
       formData.append('curso', body.curso || '');
       formData.append('pead', body.pead || '');
       formData.append('docente', body.docente || '');
       formData.append('respuestas', body.respuestas || '');
-      formData.append('timestamp', new Date().toISOString());
 
-      // Proxies para POST
-      const postProxies = [
-        {
-          name: 'thingproxy',
-          url: `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(GOOGLE_SCRIPT_URL)}`,
-        },
-        {
-          name: 'corsproxy',
-          url: `https://corsproxy.io/?${encodeURIComponent(GOOGLE_SCRIPT_URL)}`,
-        },
-        {
-          name: 'cors-anywhere',
-          url: `https://cors-anywhere.herokuapp.com/${GOOGLE_SCRIPT_URL}`,
-        }
-      ];
+      // Para POST, usar thingproxy
+      const postProxyUrl = `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(GOOGLE_SCRIPT_URL)}`;
+      
+      try {
+        console.log('Enviando POST a:', postProxyUrl);
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-      for (const proxy of postProxies) {
-        try {
-          console.log(`Intentando POST con ${proxy.name}...`);
+        const response = await fetch(postProxyUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: formData.toString(),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const text = await response.text();
+          console.log('Respuesta POST:', text.substring(0, 200));
           
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-          const response = await fetch(proxy.url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: formData.toString(),
-            signal: controller.signal
+          return res.status(200).json({
+            success: true,
+            message: 'Formulario enviado correctamente'
           });
-
-          clearTimeout(timeoutId);
-
-          if (response.ok) {
-            console.log(`✅ POST con ${proxy.name} exitoso`);
-            return res.status(200).json({
-              success: true,
-              message: 'Formulario enviado correctamente'
-            });
-          }
-        } catch (error) {
-          console.log(`POST con ${proxy.name} falló:`, error.message);
         }
+      } catch (error) {
+        console.error('Error en POST:', error);
       }
 
-      // Si todo falla, igual retornar éxito
-      console.log('⚠️ Todos los POST fallaron, pero retornando éxito');
+      // Si falla, igual retornar éxito
       return res.status(200).json({
         success: true,
         message: 'Formulario procesado'

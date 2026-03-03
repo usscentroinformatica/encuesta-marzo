@@ -7,8 +7,6 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const emailCompleto = `${nombreUsuario}@uss.edu.pe`.toLowerCase()
-
   const ingresar = async () => {
   if (!nombreUsuario.trim()) {
     setError('Ingresa tu usuario')

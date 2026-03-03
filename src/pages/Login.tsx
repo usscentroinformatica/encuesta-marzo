@@ -10,121 +10,116 @@ export default function Login() {
   const emailCompleto = `${nombreUsuario}@uss.edu.pe`.toLowerCase()
 
   const ingresar = async () => {
-    if (!nombreUsuario.trim()) {
-      setError('Ingresa tu usuario')
-      return
-    }
-
-    setLoading(true)
-    setError('')
-
-    try {
-      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      
-      if (isLocal) {
-        // ====== DESARROLLO LOCAL ======
-        const url = `https://corsproxy.io/?${encodeURIComponent(
-          `https://script.google.com/macros/s/AKfycbwY2H2_5-mlbnpSE95trOmkpvgWHu--olFGQoEtSd1onp9eyDP1gfKFAHbRGcVMdz2u/exec?email=${encodeURIComponent(emailCompleto)}`
-        )}`
-        
-        console.log('URL local:', url);
-        const res = await fetch(url);
-        
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-        }
-        
-        const data = await res.json();
-
-        if (data.cursos && data.cursos[0]?.curso !== "Sin cursos asignados") {
-          // Verificar si hay cursos pendientes
-          const cursosPendientes = data.cursos.filter((c: any) => !c.completado);
-          
-          if (cursosPendientes.length === 0) {
-            setError('Ya has completado todas las encuestas disponibles');
-            setLoading(false);
-            return;
-          }
-          
-          localStorage.setItem('eval_data', JSON.stringify({ 
-            email: emailCompleto, 
-            cursos: data.cursos 
-          }));
-          window.location.href = '/formulario';
-        } else {
-          setError('Usuario no encontrado o sin cursos asignados');
-        }
-        
-      } else {
-        // ====== PRODUCCIÓN VERCEL ======
-        console.log('Usando Vercel Serverless Function...');
-        
-        const response = await fetch(`/api/google-script?email=${encodeURIComponent(emailCompleto)}`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        console.log('Respuesta status:', response.status);
-        
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        const result = await response.json();
-        console.log('Resultado completo:', result);
-        
-        const data = result.data || result;
-        
-        if (data && data.cursos && data.cursos[0]?.curso !== "Sin cursos asignados") {
-          // Verificar si hay cursos pendientes
-          const cursosPendientes = data.cursos.filter((c: any) => !c.completado);
-          
-          if (cursosPendientes.length === 0) {
-            setError('Ya has completado todas las encuestas disponibles');
-            setLoading(false);
-            return;
-          }
-          
-          localStorage.setItem('eval_data', JSON.stringify({ 
-            email: emailCompleto, 
-            cursos: data.cursos 
-          }));
-          window.location.href = '/formulario';
-        } else if (data && data.error) {
-          setError(data.error);
-        } else {
-          setError('Usuario no encontrado o sin cursos asignados');
-        }
-      }
-      
-    } catch (error: unknown) {
-      console.error('Error completo:', error);
-      
-      if (error instanceof Error) {
-        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-          setError('Error de red. Verifica tu conexión a internet.');
-        } else if (error.message.includes('403') || error.message.includes('Forbidden')) {
-          setError('Acceso denegado. El proxy no está disponible.');
-        } else if (error.message.includes('404') || error.message.includes('Not Found')) {
-          setError('Recurso no encontrado. Verifica la configuración.');
-        } else if (error.message.includes('timeout') || error.message.includes('aborted')) {
-          setError('Tiempo de espera agotado. Intenta nuevamente.');
-        } else {
-          setError(`Error: ${error.message}`);
-        }
-      } else {
-        setError('Error desconocido. Intenta más tarde.');
-      }
-      
-      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        console.log('Mostrando opción de datos de prueba...');
-      }
-    } finally {
-      setLoading(false);
-    }
+  if (!nombreUsuario.trim()) {
+    setError('Ingresa tu usuario')
+    return
   }
+
+  setLoading(true)
+  setError('')
+
+  try {
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const emailCompleto = `${nombreUsuario}@uss.edu.pe`.toLowerCase()
+    
+    if (isLocal) {
+      // DESARROLLO LOCAL
+      const url = `https://corsproxy.io/?${encodeURIComponent(
+        `https://script.google.com/macros/s/AKfycbwY2H2_5-mlbnpSE95trOmkpvgWHu--olFGQoEtSd1onp9eyDP1gfKFAHbRGcVMdz2u/exec?email=${encodeURIComponent(emailCompleto)}`
+      )}`
+      
+      console.log('URL local:', url);
+      const res = await fetch(url);
+      
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+      
+      const data = await res.json();
+      console.log('Datos recibidos del servidor:', data); // ← VER ESTO
+
+      if (data.cursos && data.cursos.length > 0) {
+        // Mostrar qué cursos están completados
+        const completados = data.cursos.filter((c: any) => c.completado);
+        const pendientes = data.cursos.filter((c: any) => !c.completado);
+        
+        console.log('Cursos completados:', completados);
+        console.log('Cursos pendientes:', pendientes);
+        
+        if (pendientes.length === 0) {
+          setError('Ya has completado todas las encuestas disponibles');
+          setLoading(false);
+          return;
+        }
+        
+        localStorage.setItem('eval_data', JSON.stringify({ 
+          email: emailCompleto, 
+          cursos: data.cursos // Guardamos todos con su estado completado
+        }));
+        
+        window.location.href = '/formulario';
+      } else {
+        setError('Usuario no encontrado o sin cursos asignados');
+      }
+    } else {
+      // PRODUCCIÓN VERCEL
+      console.log('Usando Vercel Serverless Function...');
+      
+      const response = await fetch(`/api/google-script?email=${encodeURIComponent(emailCompleto)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      const result = await response.json();
+      console.log('Resultado completo:', result);
+      
+      const data = result.data || result;
+      
+      if (data && data.cursos && data.cursos.length > 0) {
+        const pendientes = data.cursos.filter((c: any) => !c.completado);
+        
+        if (pendientes.length === 0) {
+          setError('Ya has completado todas las encuestas disponibles');
+          setLoading(false);
+          return;
+        }
+        
+        localStorage.setItem('eval_data', JSON.stringify({ 
+          email: emailCompleto, 
+          cursos: data.cursos 
+        }));
+        window.location.href = '/formulario';
+      } else if (data && data.error) {
+        setError(data.error);
+      } else {
+        setError('Usuario no encontrado o sin cursos asignados');
+      }
+    }
+    
+  } catch (error: unknown) {
+    console.error('Error completo:', error);
+    
+    if (error instanceof Error) {
+      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+        setError('Error de red. Verifica tu conexión a internet.');
+      } else if (error.message.includes('403') || error.message.includes('Forbidden')) {
+        setError('Acceso denegado. El proxy no está disponible.');
+      } else {
+        setError(`Error: ${error.message}`);
+      }
+    } else {
+      setError('Error desconocido. Intenta más tarde.');
+    }
+    
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      console.log('Mostrando opción de datos de prueba...');
+    }
+  } finally {
+    setLoading(false);
+  }
+}
 
   return (
     <div style={{ 

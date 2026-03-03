@@ -247,7 +247,6 @@ export default function Formulario() {
   const [error, setError] = useState('')
   const [exitoModal, setExitoModal] = useState(false)
 
-  // ✅ Mover GOOGLE_SCRIPT_URL al componente para usarlo
   const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwY2H2_5-mlbnpSE95trOmkpvgWHu--olFGQoEtSd1onp9eyDP1gfKFAHbRGcVMdz2u/exec";
 
   useEffect(() => {
@@ -257,8 +256,20 @@ export default function Formulario() {
       return
     }
     const parsed = JSON.parse(saved)
-    setDatos(parsed)
-    if (parsed.cursos.length > 0) setCursoSel(parsed.cursos[0].curso)
+    
+    // Filtrar solo cursos pendientes (no completados)
+    const cursosPendientes = parsed.cursos.filter((c: any) => !c.completado)
+    
+    if (cursosPendientes.length === 0) {
+      // Si no hay cursos pendientes, redirigir con mensaje
+      alert('Ya has completado todas las encuestas disponibles')
+      window.location.href = '/';
+      return
+    }
+    
+    // Actualizar datos solo con cursos pendientes
+    setDatos({...parsed, cursos: cursosPendientes})
+    setCursoSel(cursosPendientes[0].curso)
   }, [])
 
   if (!datos || !cursoSel) {
@@ -277,121 +288,159 @@ export default function Formulario() {
   const porcentaje = Math.round((progreso / TOTAL_PREGUNTAS) * 100)
 
   const enviar = async () => {
-  const respuestasCompletas = respuestas.every((r, i) => {
-    if (i === 5) return true;
-    return r !== '';
-  });
+    const respuestasCompletas = respuestas.every((r, i) => {
+      if (i === 5) return true;
+      return r !== '';
+    });
 
-  if (!respuestasCompletas || estrellasSeleccionadas === 0) {
-    setError("Por favor responde todas las preguntas");
-    return;
-  }
-
-  setEnviando(true);
-  setError('');
-
-  // ✅ Declarar datosEnvio FUERA del try para que esté disponible en catch
-  let datosEnvio: any = null;
-
-  try {
-    const cursoLimpio = limpiarNombreCurso(info.curso);
-    const respuestasFinales = [...respuestas];
-    respuestasFinales[5] = `${estrellasSeleccionadas} estrella${estrellasSeleccionadas !== 1 ? 's' : ''}`;
-
-    // ✅ Asignar valor a datosEnvio
-    datosEnvio = {
-      action: 'submit',
-      email: datos.email,
-      nombre: info.nombre,
-      curso: cursoLimpio,
-      pead: info.pead,
-      docente: info.docente,
-      respuestas: respuestasFinales.join('|||')
-    };
-
-    console.log('Enviando datos:', datosEnvio);
-
-    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-    let response;
-    
-    if (isLocal) {
-      // Desarrollo local
-      const formData = new URLSearchParams();
-      Object.entries(datosEnvio).forEach(([k, v]) => formData.append(k, v as string));
-      
-      response = await fetch(`https://corsproxy.io/?${encodeURIComponent(GOOGLE_SCRIPT_URL)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData.toString(),
-      });
-    } else {
-      // Producción Vercel
-      response = await fetch('/api/google-script', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(datosEnvio),
-      });
+    if (!respuestasCompletas || estrellasSeleccionadas === 0) {
+      setError("Por favor responde todas las preguntas");
+      return;
     }
 
-    const result = await response.json();
-    console.log('Respuesta del servidor:', result);
+    setEnviando(true);
+    setError('');
 
-    if (result.success) {
+    let datosEnvio: any = null;
+
+    try {
+      const cursoLimpio = limpiarNombreCurso(info.curso);
+      const respuestasFinales = [...respuestas];
+      respuestasFinales[5] = `${estrellasSeleccionadas} estrella${estrellasSeleccionadas !== 1 ? 's' : ''}`;
+
+      datosEnvio = {
+        action: 'submit',
+        email: datos.email,
+        nombre: info.nombre,
+        curso: cursoLimpio,
+        pead: info.pead,
+        docente: info.docente,
+        respuestas: respuestasFinales.join('|||'),
+        cursoCompleto: info.curso, // Enviar el curso completo para identificarlo
+        completado: true // Marcar como completado
+      };
+
+      console.log('Enviando datos:', datosEnvio);
+
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+      let response;
+
+      if (isLocal) {
+        const formData = new URLSearchParams();
+        Object.entries(datosEnvio).forEach(([k, v]) => formData.append(k, v as string));
+
+        response = await fetch(`https://corsproxy.io/?${encodeURIComponent(GOOGLE_SCRIPT_URL)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: formData.toString(),
+        });
+      } else {
+        response = await fetch('/api/google-script', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(datosEnvio),
+        });
+      }
+
+      const result = await response.json();
+      console.log('Respuesta del servidor:', result);
+
+      if (result.success) {
+        // Marcar el curso actual como completado en localStorage
+        const datosActualizados = {...datos};
+        const cursoIndex = datosActualizados.cursos.findIndex((c: any) => c.curso === cursoSel);
+        if (cursoIndex !== -1) {
+          datosActualizados.cursos[cursoIndex].completado = true;
+        }
+        
+        // Verificar si quedan cursos pendientes
+        const cursosPendientes = datosActualizados.cursos.filter((c: any) => !c.completado);
+        
+        if (cursosPendientes.length > 0) {
+          // Actualizar localStorage con el curso marcado como completado
+          localStorage.setItem('eval_data', JSON.stringify(datosActualizados));
+          
+          // Mostrar mensaje de éxito y redirigir al formulario para el siguiente curso
+          setExitoModal(true);
+          
+          // Redirigir después de 3 segundos al formulario (se recargará con el siguiente curso pendiente)
+          setTimeout(() => {
+            window.location.href = '/formulario';
+          }, 3000);
+        } else {
+          // Ya no quedan cursos pendientes
+          setExitoModal(true);
+          localStorage.removeItem('eval_data');
+          
+          // Guardar copia local por si acaso
+          const respuestasGuardadas = {
+            ...datosEnvio,
+            fecha: new Date().toISOString(),
+            sincronizado: true
+          };
+          localStorage.setItem('ultima_encuesta', JSON.stringify(respuestasGuardadas));
+          
+          setTimeout(() => window.location.href = '/', 5000);
+        }
+      } else {
+        throw new Error(result.error || 'Error al enviar');
+      }
+
+    } catch (error: any) {
+      console.error('Error al enviar:', error);
+
+      if (datosEnvio) {
+        const respuestasPendientes = {
+          ...datosEnvio,
+          fecha: new Date().toISOString(),
+          pendiente: true
+        };
+        localStorage.setItem('encuesta_pendiente', JSON.stringify(respuestasPendientes));
+
+        setError('Error al enviar. Tus respuestas se guardaron localmente y se enviarán automáticamente cuando se restablezca la conexión.');
+      } else {
+        setError('Error al enviar. Intenta nuevamente.');
+      }
+
       setExitoModal(true);
       localStorage.removeItem('eval_data');
-      
-      // Guardar copia local por si acaso
-      const respuestasGuardadas = {
-        ...datosEnvio,
-        fecha: new Date().toISOString(),
-        sincronizado: true
-      };
-      localStorage.setItem('ultima_encuesta', JSON.stringify(respuestasGuardadas));
-      
       setTimeout(() => window.location.href = '/', 5000);
-    } else {
-      throw new Error(result.error || 'Error al enviar');
+    } finally {
+      setEnviando(false);
     }
-
-  } catch (error: any) {
-    console.error('Error al enviar:', error);
-    
-    // ✅ Verificar que datosEnvio existe antes de usarlo
-    if (datosEnvio) {
-      // Guardar localmente para reintentar después
-      const respuestasPendientes = {
-        ...datosEnvio,
-        fecha: new Date().toISOString(),
-        pendiente: true
-      };
-      localStorage.setItem('encuesta_pendiente', JSON.stringify(respuestasPendientes));
-      
-      setError('Error al enviar. Tus respuestas se guardaron localmente y se enviarán automáticamente cuando se restablezca la conexión.');
-    } else {
-      setError('Error al enviar. Intenta nuevamente.');
-    }
-    
-    // Aún así mostrar éxito al usuario
-    setExitoModal(true);
-    localStorage.removeItem('eval_data');
-    setTimeout(() => window.location.href = '/', 5000);
-  } finally {
-    setEnviando(false);
-  }
-};
+  };
 
   if (exitoModal) {
+    // Verificar si quedan cursos pendientes para mostrar mensaje diferente
+    const cursosPendientes = datos?.cursos.filter((c: any) => !c.completado) || [];
+    const hayMasCursos = cursosPendientes.length > 1; // >1 porque el actual ya se completó
+    
     return (
       <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
         <div style={{ backgroundColor: 'white', padding: '60px 50px', borderRadius: '20px', textAlign: 'center', maxWidth: '520px', boxShadow: '0 20px 60px rgba(0,0,0,0.4)' }}>
           <SuccessIcon />
-          <h1 style={{ color: '#5a2290', fontSize: '36px', margin: '30px 0 16px', fontWeight: '700' }}>Encuesta Enviada</h1>
-          <p style={{ fontSize: '20px', color: '#555', marginBottom: '30px' }}>Gracias por tu valiosa participación</p>
+          <h1 style={{ color: '#5a2290', fontSize: '36px', margin: '30px 0 16px', fontWeight: '700' }}>
+            {hayMasCursos ? '¡Curso Completado!' : 'Encuesta Enviada'}
+          </h1>
+          <p style={{ fontSize: '20px', color: '#555', marginBottom: '30px' }}>
+            {hayMasCursos 
+              ? `Has completado la encuesta para ${limpiarNombreCurso(info.curso)}` 
+              : 'Gracias por tu valiosa participación'}
+          </p>
           <div style={{ backgroundColor: '#e8f5e1', padding: '20px', borderRadius: '12px', color: '#1a5e20', fontWeight: '600' }}>
-            Tu encuesta ha sido registrada exitosamente
+            {hayMasCursos 
+              ? `Continúa con el siguiente curso` 
+              : 'Tu encuesta ha sido registrada exitosamente'}
           </div>
-          <p style={{ marginTop: '30px', color: '#888', fontSize: '15px' }}>Redirigiendo al inicio en 5 segundos...</p>
+          {hayMasCursos && (
+            <p style={{ marginTop: '20px', color: '#5a2290', fontSize: '16px' }}>
+              Quedan {cursosPendientes.length} curso(s) por responder
+            </p>
+          )}
+          <p style={{ marginTop: '30px', color: '#888', fontSize: '15px' }}>
+            {hayMasCursos ? 'Cargando siguiente curso...' : 'Redirigiendo al inicio en 5 segundos...'}
+          </p>
         </div>
       </div>
     )
@@ -414,6 +463,28 @@ export default function Formulario() {
           </div>
 
           <div style={{ padding: '32px 48px' }}>
+            {/* Banner de cursos pendientes */}
+            {datos.cursos.length > 1 && (
+              <div style={{
+                marginBottom: '20px',
+                padding: '16px',
+                backgroundColor: '#e3f2fd',
+                borderRadius: '8px',
+                border: '1px solid #90caf9',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px'
+              }}>
+                <span style={{ fontSize: '24px' }}>📚</span>
+                <div>
+                  <strong style={{ color: '#1565c0' }}>Tienes {datos.cursos.length} cursos pendientes</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#0d47a1' }}>
+                    Actualmente: {limpiarNombreCurso(info.curso)}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {error && (
               <div style={{ marginBottom: '24px', padding: '16px', backgroundColor: '#fce8e6', color: '#c5221f', borderRadius: '8px', border: '1px solid #f28b82' }}>
                 {error}
@@ -472,12 +543,21 @@ export default function Formulario() {
                       }}
                     >
                       {datos.cursos.map((c: any) => (
-                        <option key={c.curso} value={c.curso}>{c.curso}</option>
+                        <option key={c.curso} value={c.curso}>
+                          {c.completado ? '✅ ' : '📝 '}{c.curso}
+                        </option>
                       ))}
                     </select>
                     <div style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
                       <ChevronDown />
                     </div>
+                  </div>
+                  <div style={{
+                    marginTop: '8px',
+                    fontSize: '12px',
+                    color: '#5f6368'
+                  }}>
+                    ✅ = Completado | 📝 = Pendiente
                   </div>
                 </div>
               ) : null}

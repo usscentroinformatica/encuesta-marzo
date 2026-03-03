@@ -22,66 +22,79 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Email requerido' });
       }
 
-      // ✅ Construir URL para Google Script
+      // Construir la URL completa con el parámetro email
       const targetUrl = `${GOOGLE_SCRIPT_URL}?email=${encodeURIComponent(email)}`;
-      
-      // ✅ Usar allorigins (funciona perfectamente)
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
-      
-      console.log('Proxy URL:', proxyUrl);
+      console.log('Target URL:', targetUrl);
 
+      // REALIZAR LA PETICIÓN DIRECTA, PERMITIENDO REDIRECCIONES
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // Timeout de 15 segundos
 
-        const response = await fetch(proxyUrl, {
+        const response = await fetch(targetUrl, {
           method: 'GET',
           headers: {
             'Accept': 'application/json',
             'User-Agent': 'Vercel/1.0'
           },
-          signal: controller.signal
+          signal: controller.signal,
+          // ¡IMPORTANTE! Seguir redirecciones automáticamente (por defecto ya lo hace)
+          redirect: 'follow' 
         });
 
         clearTimeout(timeoutId);
 
+        console.log('Respuesta recibida - Status:', response.status);
+        console.log('URL final tras redirecciones:', response.url); // Esto te dirá a qué URL se llegó
+
         if (response.ok) {
-          const data = await response.json();
-          console.log('Respuesta allorigins:', data);
-          
-          // allorigins devuelve { contents: "..." }
-          if (data.contents) {
-            try {
-              const parsedData = JSON.parse(data.contents);
-              console.log('Datos parseados:', parsedData);
-              
-              // ✅ Verificar la estructura de tu respuesta
-              if (parsedData.success && parsedData.cursos && parsedData.cursos.length > 0) {
-                console.log('✅ Datos obtenidos correctamente');
-                return res.status(200).json({
-                  success: true,
-                  cursos: parsedData.cursos
-                });
-              } else {
-                console.log('Usuario sin cursos');
-                return res.status(404).json({
-                  success: false,
-                  error: 'Usuario sin cursos asignados'
-                });
+          // Intentar obtener el texto de la respuesta
+          const text = await response.text();
+          console.log('Texto de respuesta (primeros 200 chars):', text.substring(0, 200));
+
+          // Intentar parsear directamente como JSON
+          try {
+            const data = JSON.parse(text);
+            if (data.success && data.cursos && data.cursos.length > 0) {
+              console.log('✅ Datos obtenidos correctamente');
+              return res.status(200).json({
+                success: true,
+                cursos: data.cursos
+              });
+            } else {
+              console.log('Estructura de datos inesperada:', data);
+            }
+          } catch (parseError) {
+            // Si falla el parseo directo, buscar JSON dentro del texto (por si hay HTML alrededor)
+            console.log('No se pudo parsear directamente, buscando JSON...');
+            const jsonMatch = text.match(/\{.*\}/s);
+            if (jsonMatch) {
+              try {
+                const data = JSON.parse(jsonMatch[0]);
+                if (data.success && data.cursos && data.cursos.length > 0) {
+                  console.log('✅ JSON encontrado en el texto');
+                  return res.status(200).json({
+                    success: true,
+                    cursos: data.cursos
+                  });
+                }
+              } catch (e) {
+                console.error('Error parseando JSON extraído:', e);
               }
-            } catch (parseError) {
-              console.error('Error parseando JSON:', parseError);
             }
           }
+        } else {
+          console.log('La respuesta no fue OK. Status:', response.status);
         }
+
       } catch (fetchError) {
-        console.error('Error en fetch:', fetchError);
+        console.error('Error durante el fetch:', fetchError);
       }
 
-      // Si falla, devolver error
+      // Si todo falla, devolver un error claro
       return res.status(503).json({ 
         success: false,
-        error: 'Error al conectar con el servicio'
+        error: 'No se pudo obtener la información. Intenta nuevamente.'
       });
     }
 
@@ -99,40 +112,39 @@ export default async function handler(req, res) {
       formData.append('docente', body.docente || '');
       formData.append('respuestas', body.respuestas || '');
 
-      // Para POST, usar thingproxy
-      const postProxyUrl = `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(GOOGLE_SCRIPT_URL)}`;
-      
+      // Realizar petición POST directa a Google Script
       try {
-        console.log('Enviando POST a:', postProxyUrl);
-        
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-        const response = await fetch(postProxyUrl, {
+        const response = await fetch(GOOGLE_SCRIPT_URL, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
           },
           body: formData.toString(),
-          signal: controller.signal
+          signal: controller.signal,
+          redirect: 'follow'
         });
 
         clearTimeout(timeoutId);
 
         if (response.ok) {
           const text = await response.text();
-          console.log('Respuesta POST:', text.substring(0, 200));
+          console.log('Respuesta POST (primeros 200 chars):', text.substring(0, 200));
           
           return res.status(200).json({
             success: true,
             message: 'Formulario enviado correctamente'
           });
+        } else {
+          console.log('POST no OK. Status:', response.status);
         }
-      } catch (error) {
-        console.error('Error en POST:', error);
+      } catch (fetchError) {
+        console.error('Error en POST fetch:', fetchError);
       }
 
-      // Si falla, igual retornar éxito
+      // Si falla, igual retornar éxito para no bloquear al usuario
       return res.status(200).json({
         success: true,
         message: 'Formulario procesado'

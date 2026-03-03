@@ -23,7 +23,6 @@ export default function Login() {
       
       if (isLocal) {
         // ====== DESARROLLO LOCAL ======
-        // Usar el proxy ORIGINAL que SÍ funciona
         const url = `https://corsproxy.io/?${encodeURIComponent(
           `https://script.google.com/macros/s/AKfycbwY2H2_5-mlbnpSE95trOmkpvgWHu--olFGQoEtSd1onp9eyDP1gfKFAHbRGcVMdz2u/exec?email=${encodeURIComponent(emailCompleto)}`
         )}`
@@ -38,6 +37,15 @@ export default function Login() {
         const data = await res.json();
 
         if (data.cursos && data.cursos[0]?.curso !== "Sin cursos asignados") {
+          // Verificar si hay cursos pendientes
+          const cursosPendientes = data.cursos.filter((c: any) => !c.completado);
+          
+          if (cursosPendientes.length === 0) {
+            setError('Ya has completado todas las encuestas disponibles');
+            setLoading(false);
+            return;
+          }
+          
           localStorage.setItem('eval_data', JSON.stringify({ 
             email: emailCompleto, 
             cursos: data.cursos 
@@ -51,7 +59,6 @@ export default function Login() {
         // ====== PRODUCCIÓN VERCEL ======
         console.log('Usando Vercel Serverless Function...');
         
-        // EN VERCEL: usar /api/google-script con GET
         const response = await fetch(`/api/google-script?email=${encodeURIComponent(emailCompleto)}`, {
           method: 'GET',
           headers: {
@@ -68,10 +75,18 @@ export default function Login() {
         const result = await response.json();
         console.log('Resultado completo:', result);
         
-        // Ajustar según cómo responda tu función
         const data = result.data || result;
         
         if (data && data.cursos && data.cursos[0]?.curso !== "Sin cursos asignados") {
+          // Verificar si hay cursos pendientes
+          const cursosPendientes = data.cursos.filter((c: any) => !c.completado);
+          
+          if (cursosPendientes.length === 0) {
+            setError('Ya has completado todas las encuestas disponibles');
+            setLoading(false);
+            return;
+          }
+          
           localStorage.setItem('eval_data', JSON.stringify({ 
             email: emailCompleto, 
             cursos: data.cursos 
@@ -87,7 +102,6 @@ export default function Login() {
     } catch (error: unknown) {
       console.error('Error completo:', error);
       
-      // Mensajes de error más específicos
       if (error instanceof Error) {
         if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
           setError('Error de red. Verifica tu conexión a internet.');
@@ -104,17 +118,14 @@ export default function Login() {
         setError('Error desconocido. Intenta más tarde.');
       }
       
-      // En desarrollo, ofrecer datos de prueba
       if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
         console.log('Mostrando opción de datos de prueba...');
-        // No hacemos nada aquí, solo mostramos el error
       }
     } finally {
       setLoading(false);
     }
   }
 
-  // ====== JSX (EXACTAMENTE IGUAL) ======
   return (
     <div style={{ 
       minHeight: '100vh', 
@@ -123,7 +134,6 @@ export default function Login() {
       display: 'flex', 
       flexDirection: 'column' 
     }}>
-      {/* Header Principal con Logo USS */}
       <header style={{ 
         backgroundColor: '#ffffff',
         borderBottom: '6px solid #63ed12',
@@ -150,7 +160,6 @@ export default function Login() {
         </div>
       </header>
 
-      {/* Contenido Principal */}
       <main style={{ 
         flex: 1, 
         display: 'flex', 
@@ -165,7 +174,6 @@ export default function Login() {
           boxShadow: '0 1px 6px rgba(32,33,36,0.28)', 
           overflow: 'hidden' 
         }}>
-          {/* Banner del Formulario */}
           <div style={{ 
             backgroundColor: '#5a2290',
             color: 'white', 
@@ -195,7 +203,6 @@ export default function Login() {
             </div>
           </div>
 
-          {/* Formulario de Login */}
           <div style={{ padding: '32px 48px' }}>
             <div style={{ 
               border: '1px solid #dadce0', 
@@ -257,7 +264,6 @@ export default function Login() {
               </div>
             </div>
 
-            {/* Botones */}
             <div style={{ 
               display: 'flex', 
               justifyContent: 'space-between',
@@ -300,7 +306,6 @@ export default function Login() {
               </button>
             </div>
 
-            {/* Mensaje de Error */}
             {error && (
               <div style={{ 
                 marginTop: '24px', 
@@ -318,7 +323,6 @@ export default function Login() {
               </div>
             )}
 
-            {/* Nota para desarrollo */}
             {(window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && error && (
               <div style={{ 
                 marginTop: '16px', 
@@ -334,7 +338,6 @@ export default function Login() {
             )}
           </div>
 
-          {/* Footer del Formulario */}
           <footer style={{ 
             backgroundColor: '#f8f9fa', 
             padding: '24px 48px', 

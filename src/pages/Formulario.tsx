@@ -277,101 +277,109 @@ export default function Formulario() {
   const porcentaje = Math.round((progreso / TOTAL_PREGUNTAS) * 100)
 
   const enviar = async () => {
-    const respuestasCompletas = respuestas.every((r, i) => {
-      if (i === 5) return true;
-      return r !== '';
-    });
+  const respuestasCompletas = respuestas.every((r, i) => {
+    if (i === 5) return true;
+    return r !== '';
+  });
 
-    if (!respuestasCompletas || estrellasSeleccionadas === 0) {
-      setError("Por favor responde todas las preguntas");
-      return;
+  if (!respuestasCompletas || estrellasSeleccionadas === 0) {
+    setError("Por favor responde todas las preguntas");
+    return;
+  }
+
+  setEnviando(true);
+  setError('');
+
+  // ✅ Declarar datosEnvio FUERA del try para que esté disponible en catch
+  let datosEnvio: any = null;
+
+  try {
+    const cursoLimpio = limpiarNombreCurso(info.curso);
+    const respuestasFinales = [...respuestas];
+    respuestasFinales[5] = `${estrellasSeleccionadas} estrella${estrellasSeleccionadas !== 1 ? 's' : ''}`;
+
+    // ✅ Asignar valor a datosEnvio
+    datosEnvio = {
+      action: 'submit',
+      email: datos.email,
+      nombre: info.nombre,
+      curso: cursoLimpio,
+      pead: info.pead,
+      docente: info.docente,
+      respuestas: respuestasFinales.join('|||')
+    };
+
+    console.log('Enviando datos:', datosEnvio);
+
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+    let response;
+    
+    if (isLocal) {
+      // Desarrollo local
+      const formData = new URLSearchParams();
+      Object.entries(datosEnvio).forEach(([k, v]) => formData.append(k, v as string));
+      
+      response = await fetch(`https://corsproxy.io/?${encodeURIComponent(GOOGLE_SCRIPT_URL)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString(),
+      });
+    } else {
+      // Producción Vercel
+      response = await fetch('/api/google-script', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datosEnvio),
+      });
     }
 
-    setEnviando(true);
-    setError('');
+    const result = await response.json();
+    console.log('Respuesta del servidor:', result);
 
-    try {
-      const cursoLimpio = limpiarNombreCurso(info.curso);
-      const respuestasFinales = [...respuestas];
-      respuestasFinales[5] = `${estrellasSeleccionadas} estrella${estrellasSeleccionadas !== 1 ? 's' : ''}`;
-
-      // ✅ Declarar datosEnvio aquí para usarlo en todo el bloque
-      const datosEnvio = {
-        action: 'submit',
-        email: datos.email,
-        nombre: info.nombre,
-        curso: cursoLimpio,
-        pead: info.pead,
-        docente: info.docente,
-        respuestas: respuestasFinales.join('|||')
+    if (result.success) {
+      setExitoModal(true);
+      localStorage.removeItem('eval_data');
+      
+      // Guardar copia local por si acaso
+      const respuestasGuardadas = {
+        ...datosEnvio,
+        fecha: new Date().toISOString(),
+        sincronizado: true
       };
-
-      console.log('Enviando datos:', datosEnvio);
-
-      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-      let response;
+      localStorage.setItem('ultima_encuesta', JSON.stringify(respuestasGuardadas));
       
-      if (isLocal) {
-        // Desarrollo local
-        const formData = new URLSearchParams();
-        Object.entries(datosEnvio).forEach(([k, v]) => formData.append(k, v as string));
-        
-        response = await fetch(`https://corsproxy.io/?${encodeURIComponent(GOOGLE_SCRIPT_URL)}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: formData.toString(),
-        });
-      } else {
-        // Producción Vercel
-        response = await fetch('/api/google-script', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(datosEnvio),
-        });
-      }
+      setTimeout(() => window.location.href = '/', 5000);
+    } else {
+      throw new Error(result.error || 'Error al enviar');
+    }
 
-      const result = await response.json();
-      console.log('Respuesta del servidor:', result);
-
-      if (result.success) {
-        setExitoModal(true);
-        localStorage.removeItem('eval_data');
-        
-        // Guardar copia local por si acaso
-        const respuestasGuardadas = {
-          ...datosEnvio,
-          fecha: new Date().toISOString(),
-          sincronizado: true
-        };
-        localStorage.setItem('ultima_encuesta', JSON.stringify(respuestasGuardadas));
-        
-        setTimeout(() => window.location.href = '/', 5000);
-      } else {
-        throw new Error(result.error || 'Error al enviar');
-      }
-
-    } catch (error: any) {
-      console.error('Error al enviar:', error);
-      
+  } catch (error: any) {
+    console.error('Error al enviar:', error);
+    
+    // ✅ Verificar que datosEnvio existe antes de usarlo
+    if (datosEnvio) {
       // Guardar localmente para reintentar después
       const respuestasPendientes = {
-        ...datosEnvio, // ✅ Ahora datosEnvio está definido aquí
+        ...datosEnvio,
         fecha: new Date().toISOString(),
         pendiente: true
       };
       localStorage.setItem('encuesta_pendiente', JSON.stringify(respuestasPendientes));
       
       setError('Error al enviar. Tus respuestas se guardaron localmente y se enviarán automáticamente cuando se restablezca la conexión.');
-      
-      // Aún así mostrar éxito al usuario
-      setExitoModal(true);
-      localStorage.removeItem('eval_data');
-      setTimeout(() => window.location.href = '/', 5000);
-    } finally {
-      setEnviando(false);
+    } else {
+      setError('Error al enviar. Intenta nuevamente.');
     }
-  };
+    
+    // Aún así mostrar éxito al usuario
+    setExitoModal(true);
+    localStorage.removeItem('eval_data');
+    setTimeout(() => window.location.href = '/', 5000);
+  } finally {
+    setEnviando(false);
+  }
+};
 
   if (exitoModal) {
     return (

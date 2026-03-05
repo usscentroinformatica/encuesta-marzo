@@ -458,7 +458,7 @@ export default function Formulario() {
         <div style={{ width: '100%', maxWidth: '680px', backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 6px rgba(32,33,36,0.28)', overflow: 'hidden' }}>
           <div style={{ backgroundColor: '#5a2290', color: 'white', padding: '32px 48px', textAlign: 'center' }}>
             <h1 style={{ margin: 0, fontSize: '28px', fontWeight: '400' }}>ENCUESTA DE SATISFACCIÓN DOCENTE</h1>
-            <div style={{ marginTop: '12px', fontSize: '16px' }}>2026 ENERO</div>
+            <div style={{ marginTop: '12px', fontSize: '16px' }}>2026 FEBRERO</div>
             <div style={{ marginTop: '8px', fontSize: '14px', opacity: 0.9 }}>Tu participación es anónima y confidencial.</div>
           </div>
 
